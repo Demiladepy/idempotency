@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 from app.auth.security import hash_password
 from app.database import get_db
 from app.main import app
-from app.models import Account, User
+from app.models import Account, Payment, User
 
 
 @pytest.fixture
@@ -21,9 +21,11 @@ def db_engine():
     )
     User.__table__.create(engine)
     Account.__table__.create(engine)
+    Payment.__table__.create(engine)
     yield engine
-    User.__table__.drop(engine)
+    Payment.__table__.drop(engine)
     Account.__table__.drop(engine)
+    User.__table__.drop(engine)
 
 
 @pytest.fixture
@@ -78,3 +80,51 @@ def other_user_headers(client: TestClient, db_session: Session) -> dict[str, str
 
     token = create_access_token(other.id)
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def user_id(client: TestClient, auth_headers: dict[str, str]):
+    from jose import jwt
+
+    from app.config import settings
+
+    token = auth_headers["Authorization"].removeprefix("Bearer ")
+    payload = jwt.decode(
+        token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+    )
+    return payload["sub"]
+
+
+@pytest.fixture
+def funded_accounts(
+    client: TestClient,
+    db_session: Session,
+    auth_headers: dict[str, str],
+    user_id: str,
+):
+    import uuid
+    from decimal import Decimal
+
+    sender = Account(
+        user_id=uuid.UUID(user_id),
+        account_number="ACC-SENDER001",
+        balance=Decimal("1000.00"),
+        currency="USD",
+    )
+    receiver = Account(
+        user_id=uuid.UUID(user_id),
+        account_number="ACC-RECEIVER01",
+        balance=Decimal("100.00"),
+        currency="USD",
+    )
+    db_session.add(sender)
+    db_session.add(receiver)
+    db_session.commit()
+    db_session.refresh(sender)
+    db_session.refresh(receiver)
+    return {
+        "sender": sender.account_number,
+        "receiver": receiver.account_number,
+        "sender_id": str(sender.id),
+        "receiver_id": str(receiver.id),
+    }

@@ -2,7 +2,7 @@
 
 Production-style REST API implementing Stripe-style idempotency keys to safely handle duplicate payment requests under network failures.
 
-**Status:** Week 3 — account creation + balance retrieval
+**Status:** Week 4 — basic payments (debit/credit, no idempotency yet)
 
 ## Stack
 
@@ -19,9 +19,9 @@ Production-style REST API implementing Stripe-style idempotency keys to safely h
 | POST | `/auth/login` | Get JWT token ✅ |
 | GET | `/accounts/{id}` | Get account balance ✅ |
 | POST | `/accounts` | Create account for authenticated user ✅ |
-| POST | `/payments` | Create payment (idempotent) |
-| GET | `/payments/{id}` | Get payment details |
-| GET | `/payments` | List user's payments |
+| POST | `/payments` | Create payment ✅ |
+| GET | `/payments/{id}` | Get payment details ✅ |
+| GET | `/payments` | List user's payments ✅ |
 
 ## Quick start
 
@@ -74,6 +74,19 @@ curl http://localhost:8000/accounts/ACCOUNT_UUID \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
+### Payments (Week 4)
+
+```bash
+# Transfer between accounts by account number
+curl -X POST http://localhost:8000/payments \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"from_account":"ACC-SENDER001","to_account":"ACC-RECEIVER01","amount":100.00,"currency":"USD"}'
+
+curl http://localhost:8000/payments \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
 ### Tests
 
 ```bash
@@ -99,7 +112,7 @@ uvicorn app.main:app --reload
 | 1 | Repo, FastAPI, Postgres, Docker, models, migrations |
 | 2 | User registration + JWT auth ✅ |
 | 3 | Account creation + balance retrieval ✅ |
-| 4 | Basic payment endpoint (no idempotency) |
+| 4 | Basic payment endpoint (no idempotency) ✅ |
 | 5 | Idempotency layer (SERIALIZABLE + row locking) |
 | 6 | Tests, deployment, README, interview prep |
 

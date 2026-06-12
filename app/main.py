@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.routers.accounts import router as accounts_router
 from app.routers.auth import router as auth_router
+from app.routers.payments import router as payments_router
 
 app = FastAPI(
     title="Idempotent Payments API",
@@ -14,6 +15,7 @@ app = FastAPI(
 
 app.include_router(auth_router)
 app.include_router(accounts_router)
+app.include_router(payments_router)
 
 
 @app.get("/")
