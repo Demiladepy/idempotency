@@ -2,7 +2,7 @@
 
 Production-style REST API implementing Stripe-style idempotency keys to safely handle duplicate payment requests under network failures.
 
-**Status:** Week 4 — basic payments (debit/credit, no idempotency yet)
+**Status:** Week 5 — idempotency layer (Stripe-style idempotency keys)
 
 ## Stack
 
@@ -19,7 +19,7 @@ Production-style REST API implementing Stripe-style idempotency keys to safely h
 | POST | `/auth/login` | Get JWT token ✅ |
 | GET | `/accounts/{id}` | Get account balance ✅ |
 | POST | `/accounts` | Create account for authenticated user ✅ |
-| POST | `/payments` | Create payment ✅ |
+| POST | `/payments` | Create payment (idempotent) ✅ |
 | GET | `/payments/{id}` | Get payment details ✅ |
 | GET | `/payments` | List user's payments ✅ |
 
@@ -74,12 +74,20 @@ curl http://localhost:8000/accounts/ACCOUNT_UUID \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-### Payments (Week 4)
+### Payments (Week 4–5)
 
 ```bash
-# Transfer between accounts by account number
+# Transfer — Idempotency-Key required (generate a UUID per intent)
 curl -X POST http://localhost:8000/payments \
   -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Idempotency-Key: a3f1b2c4-5d6e-7f8a-9b0c-1d2e3f4a5b6c" \
+  -H "Content-Type: application/json" \
+  -d '{"from_account":"ACC-SENDER001","to_account":"ACC-RECEIVER01","amount":100.00,"currency":"USD"}'
+
+# Retry with same key + same body → cached response, no double charge
+curl -X POST http://localhost:8000/payments \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Idempotency-Key: a3f1b2c4-5d6e-7f8a-9b0c-1d2e3f4a5b6c" \
   -H "Content-Type: application/json" \
   -d '{"from_account":"ACC-SENDER001","to_account":"ACC-RECEIVER01","amount":100.00,"currency":"USD"}'
 
@@ -113,12 +121,12 @@ uvicorn app.main:app --reload
 | 2 | User registration + JWT auth ✅ |
 | 3 | Account creation + balance retrieval ✅ |
 | 4 | Basic payment endpoint (no idempotency) ✅ |
-| 5 | Idempotency layer (SERIALIZABLE + row locking) |
+| 5 | Idempotency layer (SERIALIZABLE + row locking) ✅ |
 | 6 | Tests, deployment, README, interview prep |
 
-## Known limitations (to document fully in Week 6)
+## Known limitations
 
-If the server crashes after processing a payment but before writing the idempotency record, a client retry could process the payment twice. Real systems address this with durable execution / write-ahead logs.
+If the server crashes after processing a payment but before writing the idempotency record, a client retry could process the payment twice. Real systems address this with durable execution / write-ahead logs. This gap is documented intentionally — see interview prep notes in Week 6.
 
 ## References
 

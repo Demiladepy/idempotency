@@ -73,7 +73,7 @@ def upgrade() -> None:
         sa.Column("key", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("request_hash", sa.String(), nullable=False),
-        sa.Column("response_body", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("response_body", sa.JSON(), nullable=False),
         sa.Column("response_status", sa.Integer(), nullable=False),
         sa.Column("payment_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column(

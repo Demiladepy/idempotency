@@ -1,4 +1,5 @@
 from collections.abc import Generator
+import uuid
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.auth.security import hash_password
 from app.database import get_db
 from app.main import app
-from app.models import Account, Payment, User
+from app.models import Account, IdempotencyRecord, Payment, User
 
 
 @pytest.fixture
@@ -22,7 +23,9 @@ def db_engine():
     User.__table__.create(engine)
     Account.__table__.create(engine)
     Payment.__table__.create(engine)
+    IdempotencyRecord.__table__.create(engine)
     yield engine
+    IdempotencyRecord.__table__.drop(engine)
     Payment.__table__.drop(engine)
     Account.__table__.drop(engine)
     User.__table__.drop(engine)
@@ -64,6 +67,15 @@ def auth_headers(client: TestClient) -> dict[str, str]:
     )
     token = login_response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def payment_headers(auth_headers: dict[str, str]) -> dict[str, str]:
+    return {**auth_headers, "Idempotency-Key": str(uuid.uuid4())}
+
+
+def make_payment_headers(auth_headers: dict[str, str], idempotency_key: str | None = None) -> dict[str, str]:
+    return {**auth_headers, "Idempotency-Key": idempotency_key or str(uuid.uuid4())}
 
 
 @pytest.fixture

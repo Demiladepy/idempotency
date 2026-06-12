@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Header, Response, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
@@ -19,17 +19,29 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 )
 def create_payment(
     payload: CreatePaymentRequest,
+    response: Response,
+    idempotency_key: uuid.UUID = Header(..., alias="Idempotency-Key"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    return payment_service.create_payment(
+    request_hash = payment_service.hash_payment_request(
+        from_account=payload.from_account,
+        to_account=payload.to_account,
+        amount=payload.amount,
+        currency=payload.currency,
+    )
+    body, status_code = payment_service.create_payment_idempotent(
         db=db,
         user=current_user,
+        idempotency_key=idempotency_key,
+        request_hash=request_hash,
         from_account_number=payload.from_account,
         to_account_number=payload.to_account,
         amount=payload.amount,
         currency=payload.currency,
     )
+    response.status_code = status_code
+    return body
 
 
 @router.get("", response_model=list[PaymentResponse])

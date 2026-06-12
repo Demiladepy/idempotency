@@ -2,8 +2,8 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, Numeric, String, func
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -96,7 +96,7 @@ class IdempotencyRecord(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     request_hash: Mapped[str] = mapped_column(String, nullable=False)
-    response_body: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    response_body: Mapped[dict] = mapped_column(JSON, nullable=False)
     response_status: Mapped[int] = mapped_column(Integer, nullable=False)
     payment_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("payments.id"), nullable=True
