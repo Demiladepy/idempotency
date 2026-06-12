@@ -2,7 +2,7 @@
 
 Production-style REST API implementing Stripe-style idempotency keys to safely handle duplicate payment requests under network failures.
 
-**Status:** Week 1 — foundation (FastAPI + PostgreSQL + Docker)
+**Status:** Week 3 — account creation + balance retrieval
 
 ## Stack
 
@@ -15,9 +15,10 @@ Production-style REST API implementing Stripe-style idempotency keys to safely h
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/auth/register` | Create user account |
-| POST | `/auth/login` | Get JWT token |
-| GET | `/accounts/{id}` | Get account balance |
+| POST | `/auth/register` | Create user account ✅ |
+| POST | `/auth/login` | Get JWT token ✅ |
+| GET | `/accounts/{id}` | Get account balance ✅ |
+| POST | `/accounts` | Create account for authenticated user ✅ |
 | POST | `/payments` | Create payment (idempotent) |
 | GET | `/payments/{id}` | Get payment details |
 | GET | `/payments` | List user's payments |
@@ -45,6 +46,41 @@ docker compose up --build
 docker compose exec api alembic upgrade head
 ```
 
+### Auth (Week 2)
+
+```bash
+# Register
+curl -X POST http://localhost:8000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"secretpass123"}'
+
+# Login — returns JWT
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"secretpass123"}'
+```
+
+### Accounts (Week 3)
+
+```bash
+# Create account (requires JWT from login)
+curl -X POST http://localhost:8000/accounts \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"currency":"USD"}'
+
+# Get account balance
+curl http://localhost:8000/accounts/ACCOUNT_UUID \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Tests
+
+```bash
+pip install -r requirements.txt
+pytest -v
+```
+
 ### Local development (without Docker)
 
 ```bash
@@ -61,8 +97,8 @@ uvicorn app.main:app --reload
 | Week | Goal |
 |------|------|
 | 1 | Repo, FastAPI, Postgres, Docker, models, migrations |
-| 2 | User registration + JWT auth |
-| 3 | Account creation + balance retrieval |
+| 2 | User registration + JWT auth ✅ |
+| 3 | Account creation + balance retrieval ✅ |
 | 4 | Basic payment endpoint (no idempotency) |
 | 5 | Idempotency layer (SERIALIZABLE + row locking) |
 | 6 | Tests, deployment, README, interview prep |

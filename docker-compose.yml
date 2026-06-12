@@ -22,6 +22,9 @@ services:
     environment:
       DATABASE_URL: postgresql://payments:payments@db:5432/payments_db
       APP_ENV: development
+      JWT_SECRET: dev-secret-change-before-production
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: 60
     volumes:
       - .:/app
     depends_on:
