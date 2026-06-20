@@ -95,12 +95,13 @@ Review `requirements.txt` periodically with `pip audit` or GitHub Dependabot. Pi
 
 ### Before real deployment (Week 6 / Railway)
 
+- [x] Deployed on Render: https://idempotency-9sp0.onrender.com
 - [ ] Set strong `JWT_SECRET` via platform secrets
 - [ ] Set `APP_ENV=production`
-- [ ] Enable HTTPS (Railway/Render provide this)
-- [ ] Do not expose Postgres port publicly
+- [ ] Link Render Postgres `DATABASE_URL` (Internal URL)
+- [ ] Verify `/health` returns database connected
+- [ ] Enable HTTPS (Render provides this automatically)
 - [ ] Add rate limiting (e.g. slowapi or edge proxy)
-- [ ] Remove or protect `/health` if needed for your threat model
 
 ---
 

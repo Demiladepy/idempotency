@@ -4,6 +4,8 @@ Production-style REST API that implements **Stripe-style idempotency keys** so d
 
 Built as a portfolio project for banking/tech interviews — demonstrates distributed systems thinking, ACID transactions, API design, and honest failure-mode analysis.
 
+**Live:** https://idempotency-9sp0.onrender.com
+
 ---
 
 ## What it does
@@ -24,7 +26,7 @@ Built as a portfolio project for banking/tech interviews — demonstrates distri
 | API | FastAPI, Pydantic, Uvicorn |
 | Database | PostgreSQL 16, SQLAlchemy 2.0, Alembic |
 | Auth | bcrypt, JWT (HS256) |
-| Infra | Docker, docker-compose |
+| Infra | Docker, docker-compose, [Render](https://render.com) |
 | Tests | pytest, httpx |
 
 ---
@@ -46,6 +48,38 @@ All endpoints except `/`, `/health`, and `/auth/*` require `Authorization: Beare
 | `GET` | `/payments` | List user's payments |
 
 Interactive docs (development only): http://localhost:8000/docs
+
+Production: https://idempotency-9sp0.onrender.com (docs disabled when `APP_ENV=production`)
+
+---
+
+## Deploy on Render
+
+**Live URL:** https://idempotency-9sp0.onrender.com
+
+| Setting | Value |
+|---------|--------|
+| Environment | Docker |
+| Root Directory | *(blank if repo root is this project)* |
+| Dockerfile | `Dockerfile` |
+
+**Required environment variables:**
+
+| Variable | Value |
+|----------|--------|
+| `DATABASE_URL` | Render Postgres **Internal Database URL** |
+| `APP_ENV` | `production` |
+| `JWT_SECRET` | Random string, 32+ characters |
+| `JWT_ALGORITHM` | `HS256` |
+| `JWT_EXPIRE_MINUTES` | `60` |
+
+On startup, the container runs `alembic upgrade head` then starts Uvicorn on Render's `$PORT`.
+
+**Post-deploy checklist:**
+1. Create a Render **PostgreSQL** database (if not already)
+2. Link `DATABASE_URL` on the web service (Internal URL, not External)
+3. Redeploy — migrations run automatically on boot
+4. Verify: `GET /health` → `{"status":"ok","database":"connected"}`
 
 ---
 
