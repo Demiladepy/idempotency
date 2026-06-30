@@ -118,6 +118,7 @@ Key scenarios covered:
 - Cross-user account access returns 403
 - Idempotent retry does not double-debit
 - Idempotency key collision returns 422
+- Concurrent identical requests (8 threads, same `Idempotency-Key`) create one payment only (`pytest -m postgres`)
 
 ---
 

@@ -1,9 +1,11 @@
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import get_db
 from app.main import app
@@ -64,47 +66,62 @@ def test_idempotency_key_reused_with_different_body(client, auth_headers, funded
     assert Decimal(sender_balance) == Decimal("950.00")
 
 
-@pytest.mark.skip(reason="Concurrent idempotency is validated against Postgres in Docker")
+@pytest.mark.postgres
 def test_concurrent_identical_requests_only_debit_once(
-    auth_headers: dict[str, str],
-    funded_accounts: dict[str, str],
-    db_engine,
+    postgres_engine,
+    postgres_client: TestClient,
+    postgres_auth_headers: dict[str, str],
+    postgres_funded_accounts: dict[str, str],
 ):
-    from collections.abc import Generator
+    """Race: N threads POST the same payment with the same Idempotency-Key at once.
 
-    from sqlalchemy.orm import sessionmaker
-
+    Expect exactly one payment row and one debit. Requires PostgreSQL row locking.
+    Run: docker compose exec api pytest -v -k concurrent_identical
+    """
     key = str(uuid.uuid4())
-    headers = make_payment_headers(auth_headers, key)
-    payload = _payment_payload(funded_accounts, "80.00")
-    testing_session = sessionmaker(autocommit=False, autoflush=False, bind=db_engine)
+    headers = make_payment_headers(postgres_auth_headers, key)
+    payload = _payment_payload(postgres_funded_accounts, "80.00")
+    worker_count = 8
 
-    def override_get_db() -> Generator:
-        db = testing_session()
+    session_factory = sessionmaker(
+        autocommit=False, autoflush=False, bind=postgres_engine
+    )
+
+    def override_get_db() -> Generator[Session, None, None]:
+        db = session_factory()
         try:
             yield db
         finally:
             db.close()
 
-    def send_payment() -> int:
+    def send_payment() -> tuple[int, str | None]:
         app.dependency_overrides[get_db] = override_get_db
         with TestClient(app) as thread_client:
             response = thread_client.post("/payments", json=payload, headers=headers)
-            return response.status_code
+            payment_id = response.json().get("id") if response.status_code == 201 else None
+            return response.status_code, payment_id
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        statuses = list(executor.map(lambda _: send_payment(), range(4)))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [executor.submit(send_payment) for _ in range(worker_count)]
+        results = [future.result() for future in as_completed(futures)]
 
-    assert all(status == 201 for status in statuses)
+    statuses = [status for status, _ in results]
+    payment_ids = {pid for _, pid in results if pid is not None}
+
+    assert all(status == 201 for status in statuses), f"Unexpected statuses: {statuses}"
+    assert len(payment_ids) == 1, f"Expected one payment id, got: {payment_ids}"
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as verify_client:
-        sender_balance = verify_client.get(
-            f"/accounts/{funded_accounts['sender_id']}",
-            headers=auth_headers,
-        ).json()["balance"]
-        payments = verify_client.get("/payments", headers=auth_headers).json()
+        sender_balance = Decimal(
+            verify_client.get(
+                f"/accounts/{postgres_funded_accounts['sender_id']}",
+                headers=postgres_auth_headers,
+            ).json()["balance"]
+        )
+        payments = verify_client.get("/payments", headers=postgres_auth_headers).json()
 
-    assert Decimal(sender_balance) == Decimal("920.00")
+    assert sender_balance == Decimal("920.00")
     matching = [p for p in payments if Decimal(p["amount"]) == Decimal("80.00")]
     assert len(matching) == 1
+    assert matching[0]["id"] == payment_ids.pop()

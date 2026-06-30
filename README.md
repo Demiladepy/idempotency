@@ -155,9 +155,12 @@ pytest -v
 
 # Inside Docker (uses Postgres)
 docker compose exec api pytest -v
+
+# Race condition test only (requires PostgreSQL)
+docker compose exec api pytest -v -m postgres -k concurrent_identical
 ```
 
-**Current coverage:** 27 tests passing (auth, accounts, payments, idempotency retry + collision detection).
+**Current coverage:** 28 tests — auth, accounts, payments, idempotency retry/collision, and concurrent duplicate-request safety (Postgres).
 
 ### Local dev (without Docker)
 

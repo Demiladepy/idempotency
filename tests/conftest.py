@@ -1,16 +1,129 @@
 from collections.abc import Generator
+import os
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app import models as _models  # noqa: F401 — register ORM tables
 from app.auth.security import hash_password
-from app.database import get_db
+from app.database import Base, get_db
 from app.main import app
 from app.models import Account, IdempotencyRecord, Payment, User
+
+
+def _postgres_url() -> str | None:
+    for key in ("TEST_DATABASE_URL", "DATABASE_URL"):
+        url = os.environ.get(key, "")
+        if url.startswith("postgresql"):
+            return url
+    return None
+
+
+@pytest.fixture
+def postgres_engine():
+    url = _postgres_url()
+    if url is None:
+        pytest.skip("Postgres DATABASE_URL required for race condition tests")
+
+    engine = create_engine(
+        url,
+        pool_pre_ping=True,
+        pool_size=10,
+        max_overflow=10,
+    )
+    Base.metadata.create_all(engine)
+    yield engine
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "TRUNCATE TABLE idempotency_records, payments, accounts, users "
+                "RESTART IDENTITY CASCADE"
+            )
+        )
+    engine.dispose()
+
+
+@pytest.fixture
+def postgres_client(postgres_engine) -> Generator[TestClient, None, None]:
+    session_factory = sessionmaker(
+        autocommit=False, autoflush=False, bind=postgres_engine
+    )
+
+    def override_get_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def postgres_auth_headers(postgres_client: TestClient) -> dict[str, str]:
+    email = f"race-{uuid.uuid4()}@example.com"
+    postgres_client.post(
+        "/auth/register",
+        json={"email": email, "password": "secretpass123"},
+    )
+    login_response = postgres_client.post(
+        "/auth/login",
+        json={"email": email, "password": "secretpass123"},
+    )
+    token = login_response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def postgres_funded_accounts(
+    postgres_client: TestClient,
+    postgres_engine,
+    postgres_auth_headers: dict[str, str],
+) -> dict[str, str]:
+    from decimal import Decimal
+
+    from jose import jwt
+
+    from app.config import settings
+
+    token = postgres_auth_headers["Authorization"].removeprefix("Bearer ")
+    user_id = uuid.UUID(
+        jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])["sub"]
+    )
+
+    session = sessionmaker(bind=postgres_engine)()
+    sender = Account(
+        user_id=user_id,
+        account_number=f"ACC-SEND-{uuid.uuid4().hex[:8].upper()}",
+        balance=Decimal("1000.00"),
+        currency="USD",
+    )
+    receiver = Account(
+        user_id=user_id,
+        account_number=f"ACC-RECV-{uuid.uuid4().hex[:8].upper()}",
+        balance=Decimal("0.00"),
+        currency="USD",
+    )
+    session.add(sender)
+    session.add(receiver)
+    session.commit()
+    session.refresh(sender)
+    session.refresh(receiver)
+    session.close()
+
+    return {
+        "sender": sender.account_number,
+        "receiver": receiver.account_number,
+        "sender_id": str(sender.id),
+        "receiver_id": str(receiver.id),
+    }
 
 
 @pytest.fixture
