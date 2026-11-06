@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -20,6 +21,11 @@ _INSECURE_JWT_SECRETS = frozenset(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    tokens = os.environ.get("THREAD_POOL_TOKENS", "").strip()
+    if tokens:
+        import anyio
+
+        anyio.to_thread.current_default_thread_limiter().total_tokens = int(tokens)
     if settings.app_env == "production":
         if settings.jwt_secret in _INSECURE_JWT_SECRETS:
             raise RuntimeError(

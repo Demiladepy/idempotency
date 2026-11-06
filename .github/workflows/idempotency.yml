@@ -1,0 +1,42 @@
+name: idempotency
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  harness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: payments
+          POSTGRES_PASSWORD: payments
+          POSTGRES_DB: payments_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U payments -d payments_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://payments:payments@localhost:5432/payments_db
+      APP_ENV: development
+      JWT_SECRET: dev-secret-change-before-production
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: "60"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: alembic upgrade head
+      - run: pytest -v
+      # GitHub's Postgres image allows 100 connections. The 200-way
+      # result in BENCHMARKS.md was run locally, where compose sets 300.
+      - run: python scripts/crash_harness.py --runs 20
+      - run: python scripts/concurrency_idempotency.py --requests 40 --loops 3

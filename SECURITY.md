@@ -90,7 +90,7 @@ Review `requirements.txt` periodically with `pip audit` or GitHub Dependabot. Pi
 
 1. **No rate limiting** — add at API gateway before any public deployment.
 2. **Email enumeration on register (409)** — tradeoff for clear UX in demo API.
-3. **Crash window before idempotency persist** — the durable execution problem; documented in README.
+3. **External charge outside the database transaction** — the in-database charge and idempotency row commit together, and `scripts/crash_harness.py` checks a hard exit before that commit. A card acquirer that captures before this commit would still need an outbox.
 4. **JWT revocation** — 60-minute expiry only; no blocklist.
 
 ### Before real deployment (Week 6 / Railway)

@@ -39,6 +39,7 @@ env/
 
 # Testing
 .pytest_cache/
+harness-*.log
 .coverage
 htmlcov/
 .tox/

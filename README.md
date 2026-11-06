@@ -158,9 +158,25 @@ docker compose exec api pytest -v
 
 # Race condition test only (requires PostgreSQL)
 docker compose exec api pytest -v -m postgres -k concurrent_identical
+
+# Crash before the shared commit, then retry. Expect 1 payment, 20/20.
+python scripts/crash_harness.py --runs 20
+
+# 200 concurrent requests, one Idempotency-Key, 50 times. Expect 1 payment each time.
+python scripts/concurrency_idempotency.py --requests 200 --loops 50
 ```
 
-**Current coverage:** 28 tests — auth, accounts, payments, idempotency retry/collision, and concurrent duplicate-request safety (Postgres).
+### Failure injection
+
+`POST /payments` inserts an idempotency placeholder, applies the charge, then commits both in one transaction. `CRASH_AFTER=charge_committed` calls `os._exit(1)` after the charge flush and before that commit. The process dies without a cleanup commit, Postgres aborts the open transaction, and the retry finds no row.
+
+`scripts/crash_harness.py` starts the API with that variable, sends one payment, waits for the process to exit 1, restarts without the variable, resends the same key, and counts `payments` for the sender. Locally that was **20/20 with exactly one payment**. A count of 2 would mean the charge had committed on its own.
+
+`scripts/concurrency_idempotency.py` is the load-side check: N in-flight requests, one key, `SELECT COUNT(*)` equals 1. Waiters block on `SELECT ... FOR UPDATE` until the winner commits. Locally, 200 requests with one key all returned 201 and created one payment. See [BENCHMARKS.md](BENCHMARKS.md).
+
+The limit of this fix: it holds only while the charge is a row in this database. A capture on an external acquirer commits outside the transaction, and a crash after that capture still double-charges. That case needs an outbox, which this service does not implement.
+
+**Current coverage:** 32 tests — auth, accounts, payments, idempotency retry/collision, crash-hook placement, and concurrent duplicate-request safety (Postgres).
 
 ### Local dev (without Docker)
 
@@ -226,7 +242,7 @@ This project applies production-*style* security patterns appropriate for a port
 | Register returns **409** for duplicate email | Email enumeration | Generic response or CAPTCHA |
 | No HTTPS in local Docker setup | Token interception | TLS termination at load balancer |
 | JWT cannot be revoked before expiry | Stolen token usable until expiry | Short TTL + refresh tokens + blocklist |
-| Crash after payment, before idempotency write | Possible double-pay on retry | Durable execution / outbox pattern |
+| Crash between charge flush and commit | No double-pay: both rows roll back. Harness: `scripts/crash_harness.py` | An external acquirer call would still sit outside this transaction; that needs an outbox |
 | Postgres port exposed on localhost in compose | Dev-only exposure | Remove port mapping in production |
 | Hardcoded dev DB credentials in compose | Dev-only | Secrets manager in production |
 
@@ -245,6 +261,7 @@ Copy `.env.example` to `.env`:
 | `JWT_SECRET` | HS256 signing key (≥32 chars in production) | dev placeholder |
 | `JWT_ALGORITHM` | JWT algorithm | `HS256` |
 | `JWT_EXPIRE_MINUTES` | Token lifetime | `60` |
+| `CRASH_AFTER` | Hard-exit point for the failure harness. Unset in normal runs | unset |
 
 ---
 
@@ -253,6 +270,7 @@ Copy `.env.example` to `.env`:
 ```
 app/
 ├── main.py              # FastAPI app, health check
+├── crash.py             # CRASH_AFTER hard-exit hook
 ├── config.py            # Settings from environment
 ├── database.py          # SQLAlchemy session
 ├── models.py            # User, Account, Payment, IdempotencyRecord
@@ -260,6 +278,7 @@ app/
 ├── routers/             # auth, accounts, payments
 ├── schemas/             # Pydantic request/response models
 └── services/            # Payment + idempotency business logic
+scripts/                 # Crash harness and concurrency check
 alembic/                 # Database migrations
 tests/                   # pytest suite
 ```
@@ -272,7 +291,7 @@ tests/                   # pytest suite
 >
 > Clients send an Idempotency-Key with every payment. The server hashes the request body, uses Postgres row locks to handle concurrent duplicates, and returns the cached response on retry instead of charging twice.
 >
-> I can walk through the three scenarios — new key, same key same body, same key different body — and I'm honest about what I didn't solve: if the server crashes between executing the payment and persisting the idempotency record, a retry could still double-pay. Production systems use durable execution logs for that."
+> I can walk through the three scenarios — new key, same key same body, same key different body. The charge and the idempotency row commit together, and a crash harness hard-exits before that commit, restarts, and checks the retry still created one payment. The limit is an external charge that commits outside Postgres: that needs an outbox."
 
 ---
 

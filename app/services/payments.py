@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.crash import AFTER_CHARGE_FLUSH, crash_after
 from app.models import Account, IdempotencyRecord, Payment, User
 from app.schemas.payment import PaymentResponse
 
@@ -207,6 +208,10 @@ def create_payment_idempotent(
                 currency=currency,
             )
             response_body = _payment_response(payment, from_account, to_account)
+
+            # Same transaction as the placeholder above. A hard exit here rolls
+            # the charge and the idempotency row back together.
+            crash_after(AFTER_CHARGE_FLUSH)
 
             placeholder.response_body = _serialize_response(response_body)
             placeholder.response_status = status.HTTP_201_CREATED
